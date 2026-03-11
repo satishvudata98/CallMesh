@@ -1,0 +1,21 @@
+{
+  "name": "video-call-app",
+  "version": "1.0.0",
+  "description": "Simple two-person WebRTC video calling app with a minimal ws signaling server.",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js"
+  },
+  "keywords": [
+    "webrtc",
+    "video-call",
+    "websocket",
+    "ws",
+    "node"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.18.1"
+  }
+}

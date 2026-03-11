@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CallMe</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main id="app" class="app" data-view="home" data-mode="none">
+      <section id="homeScreen" class="home-screen">
+        <div class="home-shell">
+          <div class="brand-block">
+            <p class="eyebrow">Private two-person calling</p>
+            <h1>Call Me</h1>
+            <p class="home-subtitle">
+              Choose audio or video, enter a room ID, and start the call.
+            </p>
+          </div>
+
+          <div class="mode-grid">
+            <button id="audioModeButton" class="mode-card" type="button">
+              <span class="mode-card-title">Audio Call</span>
+              <span class="mode-card-text">Microphone only. Clean and simple.</span>
+            </button>
+
+            <button id="videoModeButton" class="mode-card" type="button">
+              <span class="mode-card-title">Video Call</span>
+              <span class="mode-card-text">Camera and microphone with full-screen video.</span>
+            </button>
+          </div>
+
+          <div class="call-tab">
+            <div class="call-tab-header">
+              <span class="call-tab-title">Call Me</span>
+              <span id="selectedModeLabel" class="call-tab-mode">No mode selected</span>
+            </div>
+
+            <div class="join-form">
+              <input
+                id="roomInput"
+                type="text"
+                placeholder="Select audio or video first"
+                maxlength="50"
+                autocomplete="off"
+                disabled
+              />
+              <button id="joinButton" type="button" disabled>Start Call</button>
+            </div>
+
+            <p id="homeStatus" class="home-status">Ready.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="callScreen" class="call-screen" hidden>
+        <div class="call-header">
+          <div>
+            <p id="callModeBadge" class="call-mode-badge">Video Call</p>
+            <h2 id="callRoomLabel" class="call-room-label">Room</h2>
+          </div>
+          <p id="callStatus" class="call-status">Connecting...</p>
+        </div>
+
+        <div class="call-stage">
+          <video id="remoteVideo" autoplay playsinline></video>
+
+          <div id="audioVisual" class="audio-visual" hidden>
+            <div class="pulse-ring pulse-ring-one"></div>
+            <div class="pulse-ring pulse-ring-two"></div>
+            <div class="pulse-core"></div>
+            <p class="audio-visual-label">Audio call in progress</p>
+          </div>
+
+          <div id="waitingOverlay" class="waiting-overlay">
+            Waiting for the other person to join...
+          </div>
+
+          <div id="localPreview" class="local-preview">
+            <video id="localVideo" autoplay playsinline muted></video>
+            <span class="preview-label">You</span>
+          </div>
+        </div>
+
+        <div class="controls">
+          <button id="toggleMicButton" class="control-button" type="button" disabled>
+            Mute
+          </button>
+          <button
+            id="toggleCameraButton"
+            class="control-button"
+            type="button"
+            disabled
+          >
+            Camera Off
+          </button>
+          <button id="leaveButton" class="control-button leave-button" type="button" disabled>
+            Leave
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      window.SIGNALING_SERVER_URL = window.SIGNALING_SERVER_URL || "";
+    </script>
+    <script src="./app.js"></script>
+  </body>
+</html>
