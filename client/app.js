@@ -15,9 +15,16 @@ const localPreview = document.getElementById("localPreview");
 const localVideo = document.getElementById("localVideo");
 const audioVisual = document.getElementById("audioVisual");
 const waitingOverlay = document.getElementById("waitingOverlay");
+const waitingTitle = document.getElementById("waitingTitle");
+const waitingText = document.getElementById("waitingText");
 const toggleMicButton = document.getElementById("toggleMicButton");
 const toggleCameraButton = document.getElementById("toggleCameraButton");
 const leaveButton = document.getElementById("leaveButton");
+
+const screenMap = {
+  home: homeScreen,
+  call: callScreen,
+};
 
 const rtcConfig = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -40,6 +47,7 @@ let localStream = null;
 let remoteStream = null;
 let currentRoomId = "";
 let isJoined = false;
+let isJoining = false;
 let selectedCallMode = null;
 
 function getModeLabel(mode = selectedCallMode) {
@@ -49,12 +57,12 @@ function getModeLabel(mode = selectedCallMode) {
 function getMediaSupportError() {
   if (!window.isSecureContext) {
     return new Error(
-      "Camera/microphone access needs HTTPS on mobile. Open this app from a secure URL."
+      "Camera and microphone access needs HTTPS on mobile. Open this app from a secure URL."
     );
   }
 
   return new Error(
-    "This browser does not support camera/microphone access through navigator.mediaDevices."
+    "This browser does not support camera or microphone access through navigator.mediaDevices."
   );
 }
 
@@ -69,13 +77,28 @@ function getSignalingServerUrl() {
   return `${protocol}://${window.location.host}`;
 }
 
+function showScreen(screenName) {
+  Object.entries(screenMap).forEach(([name, element]) => {
+    const isActive = name === screenName;
+    element.hidden = !isActive;
+    element.setAttribute("aria-hidden", String(!isActive));
+  });
+
+  appElement.dataset.screen = screenName;
+}
+
+function setCallState(state) {
+  appElement.dataset.callState = state;
+}
+
 function setStatus(message) {
   homeStatus.textContent = message;
   callStatus.textContent = message;
 }
 
-function setWaitingMessage(message) {
-  waitingOverlay.textContent = message;
+function setWaitingMessage(title, detail) {
+  waitingTitle.textContent = title;
+  waitingText.textContent = detail;
   waitingOverlay.hidden = false;
 }
 
@@ -107,16 +130,8 @@ function setModeButtonsDisabled(disabled) {
   videoModeButton.disabled = disabled;
 }
 
-function showHomeScreen() {
-  appElement.dataset.view = "home";
-  homeScreen.hidden = false;
-  callScreen.hidden = true;
-}
-
-function showCallScreen() {
-  appElement.dataset.view = "call";
-  homeScreen.hidden = true;
-  callScreen.hidden = false;
+function updateJoinButtonState() {
+  joinButton.disabled = !selectedCallMode || !roomInput.value.trim() || isJoined || isJoining;
 }
 
 function updateHomeUI() {
@@ -127,29 +142,33 @@ function updateHomeUI() {
   if (!selectedCallMode) {
     selectedModeLabel.textContent = "No mode selected";
     roomInput.disabled = true;
-    joinButton.disabled = true;
-    joinButton.textContent = "Start Call";
     roomInput.placeholder = "Select audio or video first";
+    joinButton.textContent = "Start Call";
+    updateJoinButtonState();
     return;
   }
 
   const modeLabel = getModeLabel();
   selectedModeLabel.textContent = modeLabel;
   roomInput.disabled = false;
-  joinButton.disabled = false;
-  joinButton.textContent = `Start ${modeLabel}`;
   roomInput.placeholder = `Enter room ID for ${modeLabel.toLowerCase()}`;
+  joinButton.textContent = `Start ${modeLabel}`;
+  updateJoinButtonState();
 }
 
 function updateCallScreen() {
-  callModeBadge.textContent = getModeLabel();
+  const modeLabel = selectedCallMode ? getModeLabel() : "Call";
+
+  callModeBadge.textContent = modeLabel;
   callRoomLabel.textContent = currentRoomId ? `Room ${currentRoomId}` : "Room";
   audioVisual.hidden = selectedCallMode !== "audio";
   localPreview.hidden = selectedCallMode !== "video";
+  toggleCameraButton.hidden = selectedCallMode !== "video";
+  updateMediaButtonLabels();
 }
 
 function setCallMode(mode) {
-  if (isJoined) {
+  if (isJoined || isJoining) {
     return;
   }
 
@@ -216,12 +235,7 @@ async function startLocalMedia() {
     track.contentHint = "speech";
   });
 
-  if (selectedCallMode === "video") {
-    localVideo.srcObject = localStream;
-  } else {
-    localVideo.srcObject = null;
-  }
-
+  localVideo.srcObject = selectedCallMode === "video" ? localStream : null;
   updateMediaButtonLabels();
 }
 
@@ -267,19 +281,21 @@ function disconnectSocket() {
 
 function resetToHomeState() {
   isJoined = false;
+  isJoining = false;
   currentRoomId = "";
   selectedCallMode = null;
   closePeerConnection();
   disconnectSocket();
   stopLocalMedia();
+  setCallState("idle");
   setModeButtonsDisabled(false);
   roomInput.value = "";
   setControlsEnabled(false);
+  hideWaitingMessage();
   updateHomeUI();
   updateCallScreen();
-  setWaitingMessage("Waiting for the other person to join...");
   setStatus("Ready.");
-  showHomeScreen();
+  showScreen("home");
 }
 
 function sendMessage(message) {
@@ -325,6 +341,7 @@ async function createPeerConnection() {
       }
     });
 
+    setCallState("connected");
     hideWaitingMessage();
   };
 
@@ -332,14 +349,19 @@ async function createPeerConnection() {
     const state = peerConnection.connectionState;
 
     if (state === "connected") {
+      setCallState("connected");
       setStatus(`Connected in room "${currentRoomId}".`);
       hideWaitingMessage();
     }
 
     if (state === "disconnected" || state === "failed" || state === "closed") {
+      setCallState("waiting");
       setStatus("The other person disconnected. Waiting for someone to join...");
       closePeerConnection();
-      setWaitingMessage("The other person left. Waiting for them to rejoin...");
+      setWaitingMessage(
+        "Call paused",
+        "The other person left. Stay on this screen while they rejoin the same room."
+      );
     }
   };
 
@@ -368,25 +390,31 @@ async function handleServerMessage(message) {
   switch (message.type) {
     case "joined":
       isJoined = true;
+      isJoining = false;
       selectedCallMode = message.mode || selectedCallMode;
+      setCallState("waiting");
+      updateHomeUI();
       updateCallScreen();
       setControlsEnabled(true);
       setStatus(
         `Joined ${getModeLabel().toLowerCase()} room "${message.roomId}". Waiting for the second person...`
       );
       setWaitingMessage(
+        "Waiting for your partner",
         selectedCallMode === "audio"
-          ? "Waiting for the other person to join the audio call..."
-          : "Waiting for the other person to join..."
+          ? "The audio call will start when the second person joins this room."
+          : "The video call will start when the second person joins this room."
       );
       break;
 
     case "ready":
       selectedCallMode = message.mode || selectedCallMode;
+      setCallState("joining");
       updateCallScreen();
       setStatus(`Both users are here. Starting the ${selectedCallMode} call...`);
       setWaitingMessage(
-        selectedCallMode === "audio" ? "Connecting audio call..." : "Connecting video call..."
+        selectedCallMode === "audio" ? "Connecting audio" : "Connecting video",
+        "WebRTC is preparing the peer connection."
       );
 
       if (message.shouldCreateOffer) {
@@ -424,9 +452,13 @@ async function handleServerMessage(message) {
       break;
 
     case "peer-left":
+      setCallState("waiting");
       setStatus("The other person left the room. Waiting for someone to join...");
       closePeerConnection();
-      setWaitingMessage("The other person left. Waiting for them to rejoin...");
+      setWaitingMessage(
+        "Call ended",
+        "The other person left. Keep this room open if you want them to rejoin."
+      );
       break;
 
     case "full":
@@ -449,6 +481,10 @@ async function handleServerMessage(message) {
 async function joinRoom() {
   const roomId = roomInput.value.trim();
 
+  if (isJoining || isJoined) {
+    return;
+  }
+
   if (!selectedCallMode) {
     setStatus("Choose audio or video before joining a room.");
     return;
@@ -459,15 +495,19 @@ async function joinRoom() {
     return;
   }
 
+  currentRoomId = roomId;
+  isJoining = true;
+  setCallState("joining");
+  updateCallScreen();
+  showScreen("call");
   joinButton.disabled = true;
   setModeButtonsDisabled(true);
-  currentRoomId = roomId;
-  updateCallScreen();
-  showCallScreen();
+  leaveButton.disabled = false;
   setWaitingMessage(
+    selectedCallMode === "audio" ? "Starting audio setup" : "Starting video setup",
     selectedCallMode === "audio"
-      ? "Starting microphone and joining audio room..."
-      : "Starting camera and microphone..."
+      ? "Requesting microphone access and joining the room."
+      : "Requesting camera and microphone access and joining the room."
   );
   setStatus(
     selectedCallMode === "audio"
@@ -488,17 +528,41 @@ async function joinRoom() {
         await handleServerMessage(message);
       } catch (error) {
         console.error(error);
+        setCallState("waiting");
         setStatus("A WebRTC error occurred. Please leave and try again.");
+        setWaitingMessage("Connection problem", "Leave the call and try joining again.");
       }
     };
 
     socket.onerror = () => {
+      if (!isJoined) {
+        resetToHomeState();
+        setStatus("The signaling server connection failed.");
+        return;
+      }
+
+      setCallState("waiting");
       setStatus("The signaling server connection failed.");
+      setWaitingMessage(
+        "Server connection failed",
+        "The signaling server could not be reached. Try again in a moment."
+      );
     };
 
     socket.onclose = () => {
+      if (!isJoined && isJoining) {
+        resetToHomeState();
+        setStatus("Could not join the room.");
+        return;
+      }
+
       if (isJoined) {
+        setCallState("waiting");
         setStatus("Disconnected from the signaling server.");
+        setWaitingMessage(
+          "Server disconnected",
+          "You were disconnected from signaling. Leave and rejoin the room."
+        );
       }
     };
 
@@ -511,11 +575,6 @@ async function joinRoom() {
     console.error(error);
     resetToHomeState();
     setStatus(error.message || "Could not access camera or microphone.");
-  } finally {
-    if (!isJoined) {
-      joinButton.disabled = !selectedCallMode;
-      setModeButtonsDisabled(false);
-    }
   }
 }
 
@@ -555,6 +614,7 @@ toggleMicButton.addEventListener("click", toggleMicrophone);
 toggleCameraButton.addEventListener("click", toggleCamera);
 leaveButton.addEventListener("click", leaveCall);
 
+roomInput.addEventListener("input", updateJoinButtonState);
 roomInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     joinRoom();
